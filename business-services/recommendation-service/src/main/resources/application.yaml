@@ -1,0 +1,45 @@
+server:
+  port: ${SERVER_PORT:8089}
+
+spring:
+  application:
+    name: recommendation-service
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/recommendation_service?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:binary777Code}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: recommendation-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.binarylabyrinth.message
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_SERVER:localhost:8761}/eureka
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  secret: ${JWT_SECRET:BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.binarylabyrinth: DEBUG

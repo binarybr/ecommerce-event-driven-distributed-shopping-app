@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: online-shopping
+data:
+  EUREKA_DEFAULT_ZONE: http://discovery-server:8761/eureka
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  MONGODB_URI: mongodb://mongo:27017/product_service
+  ORDER_DATASOURCE_URL: jdbc:mysql://mysql:3306/order_service
+  INVENTORY_DATASOURCE_URL: jdbc:mysql://mysql:3306/inventory_service
+  NOTIFICATION_DATASOURCE_URL: jdbc:mysql://mysql:3306/notification_service
+  MAIL_HOST: mailhog
+  MAIL_PORT: "1025"
+  JPA_DDL_AUTO: update
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: online-shopping
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: root
+  ORDER_DATASOURCE_USERNAME: root
+  ORDER_DATASOURCE_PASSWORD: root
+  INVENTORY_DATASOURCE_USERNAME: root
+  INVENTORY_DATASOURCE_PASSWORD: root
+  NOTIFICATION_DATASOURCE_USERNAME: root
+  NOTIFICATION_DATASOURCE_PASSWORD: root
+  GATEWAY_USERNAME: admin
+  GATEWAY_PASSWORD: change-me
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-initdb
+  namespace: online-shopping
+data:
+  init-databases.sql: |
+    CREATE DATABASE IF NOT EXISTS order_service;
+    CREATE DATABASE IF NOT EXISTS inventory_service;
+    CREATE DATABASE IF NOT EXISTS notification_service;

@@ -1,0 +1,526 @@
+# ========================================
+# Online Shopping Microservices - Docker Compose Configuration
+# ========================================
+#
+# This docker-compose file orchestrates the entire microservices application stack,
+# including all microservices, infrastructure services, and required databases/brokers.
+#
+# SERVICES INCLUDED:
+# - Infrastructure: Discovery Server, Config Server, API Gateway
+# - Business Services: Product, Order, Inventory, Notification Services
+# - Databases: MySQL (Order, Inventory, Notification), MongoDB (Product)
+# - Message Broker: Kafka + Zookeeper
+# - Other: MailHog (email testing)
+#
+# NETWORK:
+# - All services communicate via Docker network "microservices-net"
+# - Services can communicate using service names (e.g., http://product-service:8081)
+#
+# STARTUP ORDER:
+# 1. Infrastructure services (Discovery, Config) start first
+# 2. Databases (MySQL, MongoDB) start and initialize
+# 3. Kafka/Zookeeper start for message broker
+# 4. Business services start and register with Discovery Server
+# 5. API Gateway starts and routes traffic
+#
+# TO START:
+# docker-compose -f deployment/docker/docker-compose.yml up -d
+#
+# TO STOP:
+# docker-compose -f deployment/docker/docker-compose.yml down
+#
+# TO VIEW LOGS:
+# docker-compose -f deployment/docker/docker-compose.yml logs -f [service-name]
+#
+# NETWORK COMMUNICATION:
+# - Internal: Services → Service (hostname:port within docker network)
+# - External: Host → Gateway (localhost:8080)
+#
+# PORTS MAPPED:
+# 8761 - Discovery Server (Eureka)
+# 8888 - Config Server
+# 8080 - API Gateway (main entry point)
+# 8081 - Product Service (internal, via gateway)
+# 8082 - Inventory Service (internal, via gateway)
+# 8083 - Order Service (internal, via gateway)
+# 8084 - Notification Service (internal, via gateway)
+# 3307 - MySQL (host port mapped from 3306)
+# 27017 - MongoDB
+# 9092 - Kafka
+# 2181 - Zookeeper
+# 1025, 8025 - MailHog (SMTP and web UI)
+#
+# ========================================
+
+services:
+  # ========================================
+  # INFRASTRUCTURE SERVICES
+  # ========================================
+  # These services provide infrastructure for the microservices platform
+
+  # Discovery Server (Eureka) - Service Registry
+  # Maintains registry of all microservices for dynamic service discovery
+  # Port 8761: Eureka Dashboard - http://localhost:8761
+  # All services register here on startup
+  discovery-server:
+    build: ../../infrastructure-services/discovery-server
+    container_name: discovery-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - microservices-net
+
+  # Config Server - Centralized Configuration Management
+  # Provides centralized configuration for all microservices
+  # Reads from Git repository (or local files)
+  # Other services fetch config on startup via HTTP
+  config-server:
+    build: ../../infrastructure-services/config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - discovery-server
+    networks:
+      - microservices-net
+
+  # API Gateway - Single Entry Point
+  # Central router for all external client requests
+  # Routes traffic to backend microservices
+  # Handles authentication, rate limiting, logging
+  # Port 8080: Main entry point for all client requests
+  # Gateway credentials (default): admin/change-me (set via environment)
+  api-gateway:
+    build: ../../infrastructure-services/api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_DEFAULT_ZONE=http://discovery-server:8761/eureka
+      - GATEWAY_USERNAME=admin
+      - GATEWAY_PASSWORD=change-me
+    depends_on:
+      - discovery-server
+      - config-server
+    networks:
+      - microservices-net
+
+  # ========================================
+  # DATABASES
+  # ========================================
+  # MySQL: For Order Service, Inventory Service, Notification Service
+  # MongoDB: For Product Service (document-based catalog)
+
+  # MySQL Database Server
+  # Hosts three databases: order_service, inventory_service, notification_service
+  # Initialized with init-databases.sql on first startup
+  # Port 3307 mapped to 3306 (to avoid conflicts with local MySQL if running)
+  # Default credentials: root/binary777Code
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=binary777Code
+      - MYSQL_DATABASE=order_service
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pbinary777Code"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices-net
+
+  # MongoDB - Document-Based Database for Product Service
+  # Stores product catalog (flexible schema, natural for product data)
+  # Host port 27018 mapped to container 27017 — avoids conflict with a local
+  # MongoDB that may already be bound to 27017 on the host.
+  # Connect MongoDB Compass to: mongodb://localhost:27018
+  # No authentication credentials (docker-only, secured in production).
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - microservices-net
+
+  # ========================================
+  # MESSAGE BROKER (Kafka)
+  # ========================================
+  # Kafka + Zookeeper: Event streaming platform for async communication
+  # Used for: Order events, Inventory events, Notifications
+  # Decouples services: Services publish/consume events without direct coupling
+
+  # Zookeeper - Kafka Coordination Service
+  # Manages Kafka cluster state and broker coordination
+  # Required by Kafka for cluster management
+  # Port 2181: Zookeeper client connection port
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices-net
+
+  # Kafka Message Broker
+  # Event streaming: Services publish/subscribe to topics
+  # TOPICS:
+  # - "order-placed": Published by Order Service (customer ordered)
+  # - "inventory-reserved": Published by Inventory Service (stock reserved)
+  # - "inventory-failed": Published by Inventory Service (stock unavailable)
+  # - "product-created": Published by Product Service (product added)
+  # Port 9092: Kafka broker connection (internal network)
+  # Port 29092: Kafka broker connection (mapped to host, for external access)
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      # Zookeeper connection for cluster coordination
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Advertised listeners for different networks
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single broker replication (sufficient for docker-compose, not production)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - microservices-net
+
+  # MailHog - Email Testing Service
+  # Captures outgoing emails from Notification Service
+  # Provides web UI to view sent emails
+  # SMTP Server: Port 1025 (for sending emails)
+  # Web UI: Port 8025 (http://localhost:8025 - view captured emails)
+  # Useful for testing notification functionality without real email provider
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - microservices-net
+
+  # ========================================
+  # BUSINESS SERVICES
+  # ========================================
+  # These are the core microservices that provide business functionality
+  # Each runs on a separate port and manages its domain
+
+  # Product Service
+  # Manages product catalog (CRUD operations)
+  # Database: MongoDB for flexible product attributes
+  # Events: Publishes product-created events
+  # Port: 8081 (internal, accessed via API Gateway on port 8080)
+  product-service:
+    build: ../../business-services/product-service
+    container_name: product-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_DEFAULT_ZONE=http://discovery-server:8761/eureka
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/product_service
+      - SPRING_DATA_MONGODB_DATABASE=product_service
+    depends_on:
+      - mongo
+      - discovery-server
+      - config-server
+    networks:
+      - microservices-net
+
+  # Order Service
+  # Manages customer order placement and tracking
+  # Database: MySQL (order_service database)
+  # Dependencies: Calls Inventory Service (Feign client) to check stock
+  # Events: Publishes order-placed events to Kafka
+  # Consumers: Listens for inventory-reserved and inventory-failed events
+  # Port: 8083 (internal, accessed via API Gateway)
+  order-service:
+    build: ../../business-services/order-service
+    container_name: order-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      # MySQL connection for Order Service database
+      - ORDER_DATASOURCE_URL=jdbc:mysql://mysql:3306/order_service
+      - ORDER_DATASOURCE_USERNAME=root
+      - ORDER_DATASOURCE_PASSWORD=binary777Code
+      # Kafka broker for event publishing/consuming
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      # Eureka discovery server for service registration
+      - EUREKA_DEFAULT_ZONE=http://discovery-server:8761/eureka
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Inventory Service
+  # Manages product stock levels and inventory reservations
+  # Database: MySQL (inventory_service database)
+  # Events: Listens for order-placed events
+  # Events: Publishes inventory-reserved or inventory-failed events
+  # Port: 8082 (internal, via API Gateway)
+  inventory-service:
+    build: ../../business-services/inventory-service
+    container_name: inventory-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      # MySQL connection for Inventory Service database
+      - INVENTORY_DATASOURCE_URL=jdbc:mysql://mysql:3306/inventory_service
+      - INVENTORY_DATASOURCE_USERNAME=root
+      - INVENTORY_DATASOURCE_PASSWORD=binary777Code
+      # Kafka for event messaging
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      # Service discovery
+      - EUREKA_DEFAULT_ZONE=http://discovery-server:8761/eureka
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Notification Service
+  # Sends email, SMS, push notifications for order status updates
+  # Database: MySQL (notification_service database)
+  # Email Server: MailHog (SMTP on port 1025)
+  # Events: Listens for order-placed events
+  # Port: 8084 (internal, via API Gateway)
+  notification-service:
+    build: ../../business-services/notification-service
+    container_name: notification-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      # MySQL connection for Notification Service database
+      - NOTIFICATION_DATASOURCE_URL=jdbc:mysql://mysql:3306/notification_service
+      - NOTIFICATION_DATASOURCE_USERNAME=root
+      - NOTIFICATION_DATASOURCE_PASSWORD=binary777Code
+      # Kafka for event messaging
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      # Email configuration (MailHog SMTP server)
+      - MAIL_HOST=mailhog
+      - MAIL_PORT=1025
+      # Service discovery
+      - EUREKA_DEFAULT_ZONE=http://discovery-server:8761/eureka
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      mailhog:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # User Service
+  # Manages user registration, login, and JWT authentication
+  # Database: MySQL (user_service database)
+  # Events: Publishes user-registered events
+  # Port: 8085 (internal, via API Gateway)
+  user-service:
+    build: ../../business-services/user-service
+    container_name: user-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=binary777Code
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_SERVER=discovery-server:8761
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+      # Default admin seed — override these to change admin credentials without rebuilding
+      - ADMIN_EMAIL=admin@shopsphere.com
+      - ADMIN_PASSWORD=Admin@1234
+      - ADMIN_FIRST=Shop
+      - ADMIN_LAST=Admin
+      - ADMIN_PHONE=0000000000
+      # Admin self-registration key — anyone who knows this can register as ADMIN.
+      # Change this value before deploying to a shared environment.
+      - ADMIN_REGISTRATION_KEY=ShopSphere@Admin2024
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Payment Service
+  # Processes payments via Stripe integration
+  # Database: MySQL (payment_service database)
+  # Events: Publishes payment-processed/failed/refunded events
+  # Port: 8086 (internal, via API Gateway)
+  payment-service:
+    build: ../../business-services/payment-service
+    container_name: payment-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=binary777Code
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_SERVER=discovery-server:8761
+      - STRIPE_API_KEY=${STRIPE_API_KEY:-sk_test_dummy}
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Cart Service
+  # Manages shopping cart operations
+  # Database: MySQL (cart_service database)
+  # Events: Publishes item-added-to-cart, cart-cleared events
+  # Port: 8087 (internal, via API Gateway)
+  cart-service:
+    build: ../../business-services/cart-service
+    container_name: cart-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=binary777Code
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_SERVER=discovery-server:8761
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Review Service
+  # Manages product reviews and ratings
+  # Database: MySQL (review_service database)
+  # Events: Publishes review-submitted events
+  # Port: 8088 (internal, via API Gateway)
+  review-service:
+    build: ../../business-services/review-service
+    container_name: review-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=binary777Code
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_SERVER=discovery-server:8761
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Recommendation Service
+  # Co-purchase recommendation engine
+  # Database: MySQL (recommendation_service database)
+  # Events: Consumes order-placed and review-submitted to build interaction history
+  # Port: 8089 (internal, via API Gateway)
+  recommendation-service:
+    build: ../../business-services/recommendation-service
+    container_name: recommendation-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=binary777Code
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_SERVER=discovery-server:8761
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  # Admin Service
+  # Aggregator microservice — pure Feign orchestration, no local database.
+  # All endpoints require ROLE_ADMIN JWT.
+  # Port: 8090 (internal, via API Gateway)
+  admin-service:
+    build: ../../business-services/admin-service
+    container_name: admin-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_SERVER=discovery-server:8761
+      - JWT_SECRET=BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose
+    depends_on:
+      discovery-server:
+        condition: service_started
+    networks:
+      - microservices-net
+
+# ========================================
+# DOCKER NETWORK
+# ========================================
+# Bridge network for inter-container communication
+# All services communicate using container names as hostnames
+# Network name: microservices-net
+networks:
+  microservices-net:
+    driver: bridge
+
+# ========================================
+# PERSISTENT VOLUMES
+# ========================================
+# Named volumes survive `docker compose down` and container recreation, so
+# seeded/created data is not lost when images are rebuilt or ports changed.
+volumes:
+  mongo-data:
+  mysql-data:

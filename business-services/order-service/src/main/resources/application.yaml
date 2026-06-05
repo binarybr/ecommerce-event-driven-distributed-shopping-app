@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: ${ORDER_DATASOURCE_URL:jdbc:mysql://localhost:3306/order_service}
+    username: ${ORDER_DATASOURCE_USERNAME:root}
+    password: ${ORDER_DATASOURCE_PASSWORD:binary777Code}
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: order-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.binarylabyrinth.message
+
+server:
+  port: ${SERVER_PORT:8083}
+
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      inventory:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        # IMPORTANT: business exceptions must NOT count as circuit-breaker
+        # failures. "Out of stock" and "order not found" are normal outcomes,
+        # not signs that inventory-service is unhealthy. Without this, a few
+        # out-of-stock attempts would open the breaker and then reject ALL
+        # orders (even in-stock ones) with the generic fallback for 10s.
+        # Only genuine infrastructure failures (timeouts, connection errors)
+        # should trip the breaker.
+        ignore-exceptions:
+          - com.binarylabyrinth.orderservice.exception.ProductOutOfStockException
+          - com.binarylabyrinth.orderservice.exception.OrderNotFoundException
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

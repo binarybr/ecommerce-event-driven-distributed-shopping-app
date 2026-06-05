@@ -1,0 +1,59 @@
+server:
+  port: ${SERVER_PORT:8087}
+
+spring:
+  application:
+    name: cart-service
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/cart_service?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:binary777Code}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_SERVER:localhost:8761}/eureka
+  instance:
+    prefer-ip-address: true
+    metadata-map:
+      "prometheus": "true"
+
+jwt:
+  secret: ${JWT_SECRET:BinaryLabyrinthOnlineShoppingAppSecretKeyForJWTTokenSigningPurpose}
+
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 5000
+        read-timeout: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.binarylabyrinth: DEBUG
+    org.springframework.security: DEBUG

@@ -1,0 +1,11 @@
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/product_service_test
+  kafka:
+    admin:
+      auto-create: false
+
+eureka:
+  client:
+    enabled: false
