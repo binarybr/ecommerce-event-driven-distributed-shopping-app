@@ -1,0 +1,83 @@
+# =============================================================================
+#  Production / single-EC2 OVERRIDE for docker-compose.yml
+# =============================================================================
+#  This stack (13 JVM services + Kafka + MySQL + MongoDB) is memory-hungry.
+#  On a single low-cost EC2 box you MUST cap each JVM's heap and each
+#  container's memory, or the box will OOM-kill containers at random.
+#
+#  Apply it as an override (base file first, this one second):
+#
+#    docker compose \
+#      -f docker-compose.yml \
+#      -f docker-compose.prod.yml \
+#      up -d --build
+#
+#  Docker Compose MERGES this on top of the base file: the `environment`
+#  entries below are added per service, and `mem_limit` caps the container.
+#  JAVA_TOOL_OPTIONS is picked up automatically by the JVM at startup.
+#
+#  Heap sizing: MaxRAMPercentage=70 of a 350m container -> ~245m heap.
+#  SerialGC keeps GC overhead tiny for small heaps. Bump a service's
+#  mem_limit if it fails to start (look for exit code 137 = OOM-killed).
+# =============================================================================
+
+# Reusable JVM tuning, injected into every Spring Boot service.
+x-jvm-env: &jvm-env
+  - "JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Xss512k"
+
+services:
+
+  # ---- Infrastructure services (Spring) ----
+  discovery-server:
+    environment: *jvm-env
+    mem_limit: 400m
+  config-server:
+    environment: *jvm-env
+    mem_limit: 380m
+  api-gateway:
+    environment: *jvm-env
+    mem_limit: 400m
+
+  # ---- Business services (Spring) ----
+  user-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  product-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  inventory-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  order-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  payment-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  cart-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  review-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  recommendation-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  notification-service:
+    environment: *jvm-env
+    mem_limit: 360m
+  admin-service:
+    environment: *jvm-env
+    mem_limit: 360m
+
+  # ---- Infrastructure (non-JVM) ----
+  kafka:
+    mem_limit: 800m
+  zookeeper:
+    mem_limit: 300m
+  mysql:
+    mem_limit: 600m
+  mongo:
+    mem_limit: 450m
+  mailhog:
+    mem_limit: 64m
