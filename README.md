@@ -1,6 +1,6 @@
 # ShopSphere
 
-A **microservices e-commerce backend** in Spring Boot**
+A **microservices e-commerce backend** in Spring Boot with a **React + TypeScript**
 storefront — built to demonstrate distributed-systems patterns end-to-end: service
 discovery, async event-driven flows, polyglot persistence, JWT-based RBAC, circuit
 breakers, and Stripe-backed payments.
@@ -40,40 +40,6 @@ breakers, and Stripe-backed payments.
                             └──── Kafka events ────▶ notification-service ─▶ MailHog
 ```
 
-##  High-Level Architecture
-
-```
-                          ┌──────────────────────┐
-                          │   EXTERNAL CLIENTS    │
-                          └───────────┬──────────-┘
-                                      │ HTTPS / Bearer JWT
-                                      ▼
-                          ┌──────────────────────┐
-                          │     API GATEWAY       │  reactive (WebFlux)
-                          │     (Port 8080)       │  routes /api/** via lb://
-                          └───────────┬──────────-┘
-                                      │  (service discovery)
-        ┌───────────────┬────────────┼─────────────┬───────────────┬──────────────┐
-        ▼               ▼            ▼             ▼               ▼              ▼
-  ┌──────────┐   ┌──────────┐  ┌──────────┐  ┌──────────┐   ┌──────────┐  ┌──────────┐
-  │  USER    │   │ PRODUCT  │  │INVENTORY │  │  ORDER   │   │ PAYMENT  │  │  CART    │
-  │  8085    │   │  8081    │  │  8082    │  │  8083    │   │  8086    │  │  8087    │
-  │  MySQL   │   │ MongoDB  │  │  MySQL   │  │  MySQL   │   │  MySQL   │  │  MySQL   │
-  └──────────┘   └──────────┘  └──────────┘  └────┬─────┘   └──────────┘  └────┬─────┘
-        ▼               ▼            ▼             │ Feign        ▼              │ Feign
-  ┌──────────┐   ┌──────────┐  ┌──────────────┐   │ (reserve)┌──────────┐       │ (price)
-  │NOTIFICATN│   │  REVIEW  │  │RECOMMENDATION│   └────────► │INVENTORY │       └──► PRODUCT
-  │  8084    │   │  8088    │  │  8089        │              └──────────┘
-  │  MySQL   │   │  MySQL   │  │  MySQL       │       ┌──────────┐
-  └──────────┘   └──────────┘  └──────────────┘      │  ADMIN   │  aggregator (no DB)
-                                                     │  8090    │  Feign → all services
-                                                     └──────────┘
-
-  Infrastructure: DISCOVERY (Eureka 8761) · CONFIG (8888) · KAFKA (9092) · MailHog (1025/8025)
-```
-
-```
-
 **13 services in total:**
 3 infrastructure (discovery, config, gateway) + 10 business (user, product, inventory,
 order, payment, cart, review, recommendation, notification, admin).
@@ -95,12 +61,11 @@ order, payment, cart, review, recommendation, notification, admin).
 - **Persistent Docker volumes** for both databases — data survives `down`/`up`.
 
 ---
-```
 
 ## Repository layout
 
 ```
-online-shopping-app/
+e-commerce-event-driven-shopping-app/
 ├── infrastructure-services/
 │   ├── api-gateway/              # 8080 — Spring Cloud Gateway (reactive)
 │   ├── discovery-server/         # 8761 — Netflix Eureka
@@ -124,7 +89,7 @@ online-shopping-app/
 └── mvnw / mvnw.cmd               # Maven wrapper
 ```
 
-Frontend (separate repo / folder): `online-shopping-app-frontend/`.
+Frontend (separate repo / folder): `e-commerce-event-driven-shopping-app-frontend/`.
 
 ---
 
@@ -137,224 +102,22 @@ Frontend (separate repo / folder): `online-shopping-app-frontend/`.
 
 ### First-time setup
 ```powershell
-cd "C:\Binary Labyrinth\IntelliJ Workspace\online-shopping-app"
+cd "C:\Binary Labyrinth\IntelliJ Workspace\e-commerce-event-driven-shopping-app"
 copy deployment\docker\.env.example deployment\docker\.env
 # Edit .env and paste your STRIPE_API_KEY=sk_test_...
 ```
 
-## 🚀 Quick Start (5 minutes)
-
-### For First-Time Users: Start Here
-
+### Run
 ```powershell
-# 1. Navigate to project root
-cd "C:\Binary Labyrinth\IntelliJ Workspace\online-shopping-app"
-
-# 2. Clean and build the entire project (must run before Docker build)
-.\mvnw.cmd clean package -DskipTests
-
-# 3. Start all services with Docker Compose
-docker compose -f deployment\docker\docker-compose.yml up --build -d
-
-# 4. Wait for all services to start (2-3 minutes)
-# Monitor progress:
-docker compose -f deployment\docker\docker-compose.yml logs -f
-
-# 5. Verify all services are running
-docker compose -f deployment\docker\docker-compose.yml ps
-
-# 6. Test the API Gateway
-curl.exe http://localhost:8080/actuator/health
-
-# 7. Access the UIs
-# - Eureka: http://localhost:8761
-# - API Gateway: http://localhost:8080
-# - MailHog: http://localhost:8025
+.\run.ps1                 # Maven build → backend → frontend → verify
+.\run.ps1 -Clean          # wipe volumes and start completely fresh
+.\run.ps1 -SkipBuild      # fast restart, reuse existing JARs
+.\run.ps1 -SkipFrontend   # backend only
 ```
 
----
-
-## 📱 Building the Project
-
-### Clean Build (Recommended)
-```powershell
-# Clean all compiled artifacts and rebuild
-.\mvnw.cmd clean package -DskipTests
-
-# Expected output:
-# - Success message with "BUILD SUCCESS"
-# - JAR files in each service's target/ directory
-# - ~2-5 minutes depending on system speed
-
-# Output location:
-# - infrastructure-services/discovery-server/target/discovery-server-0.0.1-SNAPSHOT.jar
-# - infrastructure-services/config-server/target/config-server-0.0.1-SNAPSHOT.jar
-# - infrastructure-services/api-gateway/target/api-gateway-0.0.1-SNAPSHOT.jar
-# - business-services/*/target/*.jar (for all business services)
-```
-
-### Build with Tests
-```powershell
-# Run all tests (slow but verifies correctness)
-.\mvnw.cmd clean package
-
-# Expected: BUILD SUCCESS with test results
-```
-
-### Build Single Service
-```powershell
-# Build only one service (and its dependencies)
-.\mvnw.cmd clean package -DskipTests -pl business-services\product-service -am
-
-# Flags explanation:
-# -pl: Project List (specific module)
-# -am: Also Make (build dependencies first)
-```
-
-### Skip Tests (Fast Build)
-```powershell
-# Fastest option - skip all tests
-.\mvnw.cmd clean package -DskipTests
-```
-
----
-
-## 🐳 Running with Docker Compose (Recommended for Development)
-
-### Prerequisites for Docker Compose
-- ✅ Docker Desktop installed and running
-- ✅ Project built first: `.\mvnw.cmd clean package -DskipTests`
-- ✅ 8GB+ RAM available
-
-> ⚠️ **Important**: Always run `.\mvnw.cmd clean package -DskipTests` before `docker compose up --build`.
-> Docker copies the JAR from each service's `target/` folder — if the folder is missing or stale the build will fail.
-
-### Start All Services
-
-```powershell
-# Navigate to project root
-cd "C:\Binary Labyrinth\IntelliJ Workspace\online-shopping-app"
-
-# Option 1: Start in foreground (see logs directly)
-docker compose -f deployment\docker\docker-compose.yml up --build
-
-# Option 2: Start in background (detached mode) - recommended
-docker compose -f deployment\docker\docker-compose.yml up --build -d
-
-# Option 3: Start without rebuilding images (after first run)
-docker compose -f deployment\docker\docker-compose.yml up -d
-```
-
-### Monitor Services
-
-```powershell
-# Check all containers status
-docker compose -f deployment\docker\docker-compose.yml ps
-# Expected: UP status for all services
-
-# View logs from all services
-docker compose -f deployment\docker\docker-compose.yml logs -f
-
-# View logs from specific service
-docker compose -f deployment\docker\docker-compose.yml logs -f api-gateway
-
-# View logs from multiple services
-docker compose -f deployment\docker\docker-compose.yml logs -f api-gateway order-service
-
-# Follow logs real-time (last 100 lines)
-docker compose -f deployment\docker\docker-compose.yml logs -f --tail=100
-```
-
-### Verify Services Are Running
-
-```powershell
-# Check API Gateway is responding (no auth required for health)
-curl.exe http://localhost:8080/actuator/health
-# Expected: {"status":"UP"}
-
-# List all containers
-docker compose -f deployment\docker\docker-compose.yml ps
-
-# Expected output should show all UP:
-# - discovery-server
-# - config-server
-# - api-gateway
-# - product-service
-# - order-service
-# - inventory-service
-# - notification-service
-# - user-service
-# - payment-service
-# - cart-service
-# - mysql
-# - mongo
-# - kafka
-# - zookeeper
-# - mailhog
-```
-
-### Stop Services
-
-```powershell
-# Stop all services (keep data volumes)
-docker compose -f deployment\docker\docker-compose.yml down
-
-# Stop all services and remove volumes (resets all databases)
-docker compose -f deployment\docker\docker-compose.yml down -v
-
-# Stop and remove everything (clean slate for next run)
-docker compose -f deployment\docker\docker-compose.yml down -v --remove-orphans
-```
-
-### Restart Individual Services
-
-```powershell
-# Restart a specific service
-docker compose -f deployment\docker\docker-compose.yml restart api-gateway
-
-# Restart multiple services
-docker compose -f deployment\docker\docker-compose.yml restart order-service inventory-service
-
-# Restart all services
-docker compose -f deployment\docker\docker-compose.yml restart
-```
-
-### View Service Configuration
-
-```powershell
-# View resolved docker-compose config
-docker compose -f deployment\docker\docker-compose.yml config
-
-# Inspect a specific container
-docker inspect <container-name>
-```
-
----
-
-## 💻 Running Services Locally (Without Docker)
-
-### Prerequisites
-- ✅ Java 25 installed
-- ✅ MySQL running on localhost:3306 (your local MySQL)
-- ✅ MongoDB running on localhost:27017 (your local MongoDB)
-- ✅ Kafka + Zookeeper running on localhost:9092 (use Docker for this — see below)
-- ✅ MailHog running (optional — for testing emails)
-
-### Start Kafka via Docker (easiest option)
-
-Even when running services locally, use Docker just for Kafka and MailHog:
-
-```powershell
-# Start only Kafka, Zookeeper and MailHog via Docker
-docker run -d --name zookeeper -p 2181:2181 confluentinc/cp-zookeeper:7.6.0 `
-  -e ZOOKEEPER_CLIENT_PORT=2181
-
-docker run -d --name kafka -p 9092:9092 confluentinc/cp-kafka:7.6.0 `
-  -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 `
-  -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 `
-  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-
-docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:v1.0.1
+> **Why the script:** the service Dockerfiles `COPY target/*.jar` — they do **not**
+> compile inside Docker. Always run `mvnw clean package` before
+> `docker compose ... up --build`. `run.ps1` handles this for you.
 
 ### Where things are
 
@@ -384,6 +147,23 @@ docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:v1.0.1
 
 ---
 
+## Documentation
+
+The `docs/` directory tells the full story:
+
+| File | What's inside |
+|---|---|
+| [`docs/STORY.md`](./docs/STORY.md) | Narrative: business problem → outcomes → war stories → from-scratch blueprint |
+| [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) | System map: service catalogue, security model, flagship flows, Kafka topic map |
+| [`docs/NOTES.md`](./docs/NOTES.md) | Component & feature reference with code examples |
+| [`docs/services/`](./docs/services/) | Per-service deep dives (one MD per service) |
+| [`docs/INTERVIEW_QA.md`](./docs/INTERVIEW_QA.md) | Interview prep — system design, war stories, LLD round, HLD probes |
+
+**Recommended reading order:** `STORY.md` → `WORKFLOW.md` → drill into any
+`services/*.md` → `NOTES.md` as a reference.
+
+---
+
 ## Highlights (what's genuinely interesting in this codebase)
 
 - **Reserve-then-confirm order flow** — synchronous stock reservation + asynchronous
@@ -399,6 +179,7 @@ docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:v1.0.1
 - **Single-origin SPA** — multi-stage Docker (Node build → nginx) where nginx proxies
   `/api/` to the gateway, so the browser sees one origin and there's no CORS in prod.
 
+For the full bug-hunt / lessons section, see [War Stories in `STORY.md`](./docs/STORY.md#part-3--war-stories-the-bugs-and-what-they-taught-us).
 
 ---
 
@@ -407,8 +188,17 @@ docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:v1.0.1
 ```powershell
 # Stop everything, keep data
 docker compose -f deployment\docker\docker-compose.yml down
+cd "C:\Binary Labyrinth\VSCode Workspace\React Workspace\e-commerce-event-driven-shopping-app-frontend"
 docker compose down
 
+# Nuclear option: wipe volumes too (re-seeds catalog + admin on next run)
+.\run.ps1 -Clean
 ```
 
 ---
+
+## License & credits
+
+Personal learning project. Built by **Binary Labyrinth** as a deep-dive into
+production-style microservices patterns. See `docs/STORY.md` for the engineering
+narrative.

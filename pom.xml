@@ -9,11 +9,11 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.binarylabyrinth</groupId>
-    <artifactId>online-shopping-app</artifactId>
+    <artifactId>e-commerce-event-driven-shopping-app</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>online-shopping-app</name>
-    <description>online-shopping-app</description>
+    <name>e-commerce-event-driven-shopping-app</name>
+    <description>e-commerce-event-driven-shopping-app</description>
 
     <modules>
         <module>common-library</module>
