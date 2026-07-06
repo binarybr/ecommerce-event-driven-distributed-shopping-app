@@ -1,0 +1,22 @@
+# Maven
+target/
+**/target/
+
+# IntelliJ
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+
+# Build artifacts
+*.jar
+*.war
+*.ear
