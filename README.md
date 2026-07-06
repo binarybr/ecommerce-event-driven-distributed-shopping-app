@@ -1,6 +1,6 @@
 # ShopSphere
 
-A **microservices e-commerce backend** in Spring Boot with a **React + TypeScript**
+A **microservices e-commerce backend** in Spring Boot**
 storefront — built to demonstrate distributed-systems patterns end-to-end: service
 discovery, async event-driven flows, polyglot persistence, JWT-based RBAC, circuit
 breakers, and Stripe-backed payments.
