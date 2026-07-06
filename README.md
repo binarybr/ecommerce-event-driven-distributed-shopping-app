@@ -18,7 +18,6 @@ breakers, and Stripe-backed payments.
 | **Datastores** | MySQL 8 (transactional) · MongoDB 7 (catalog + text search) |
 | **Messaging** | Apache Kafka (Confluent 7.6) · Zookeeper |
 | **Payments / Email** | Stripe (test mode) · MailHog (dev SMTP) |
-| **Frontend** | React 18 · TypeScript 5 · Vite 5 · React Router 6 · Axios · nginx |
 | **Ops** | Docker · Docker Compose · Maven (multi-module + wrapper) · `run.ps1` |
 
 ---
@@ -392,8 +391,6 @@ docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:v1.0.1
 - **Single-origin SPA** — multi-stage Docker (Node build → nginx) where nginx proxies
   `/api/` to the gateway, so the browser sees one origin and there's no CORS in prod.
 
-For the full bug-hunt / lessons section, see [War Stories in `STORY.md`](./docs/STORY.md#part-3--war-stories-the-bugs-and-what-they-taught-us).
-
 ---
 
 ## Stop / Reset
@@ -403,7 +400,4 @@ For the full bug-hunt / lessons section, see [War Stories in `STORY.md`](./docs/
 docker compose -f deployment\docker\docker-compose.yml down
 cd "C:\Binary Labyrinth\VSCode Workspace\React Workspace\e-commerce-event-driven-shopping-app-frontend"
 docker compose down
-
-# Nuclear option: wipe volumes too (re-seeds catalog + admin on next run)
-.\run.ps1 -Clean
 ```
